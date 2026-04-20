@@ -1,5 +1,5 @@
 from tavily import TavilyClient
-from config import TAVILY_API_KEY, RESEARCH_TOPIC
+from config import TAVILY_API_KEY
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -7,9 +7,9 @@ logger = get_logger(__name__)
 _client = TavilyClient(api_key=TAVILY_API_KEY)
 
 
-def research_topic(topic: str | None = None) -> str:
+def research_topic(topic: str) -> str:
     """Search Tavily for the latest content on `topic` and return a compiled summary."""
-    query = topic or RESEARCH_TOPIC
+    query = topic
     logger.info(f"Researching: '{query}'")
 
     response = _client.search(

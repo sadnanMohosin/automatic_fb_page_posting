@@ -13,19 +13,14 @@ def _require(key: str) -> str:
     return value
 
 # Required
-TAVILY_API_KEY        = _require("TAVILY_API_KEY")
-ANTHROPIC_API_KEY     = _require("ANTHROPIC_API_KEY")
-FB_PAGE_ACCESS_TOKEN  = _require("FB_PAGE_ACCESS_TOKEN")
-FB_PAGE_ID            = _require("FB_PAGE_ID")
+TAVILY_API_KEY       = _require("TAVILY_API_KEY")
+ANTHROPIC_API_KEY    = _require("ANTHROPIC_API_KEY")
+FB_PAGE_ACCESS_TOKEN = _require("FB_PAGE_ACCESS_TOKEN")
+FB_PAGE_ID           = _require("FB_PAGE_ID")
 
-# Optional with defaults
-GOOGLE_API_KEY        = os.getenv("GOOGLE_API_KEY", "")
-RESEARCH_TOPIC        = os.getenv("RESEARCH_TOPIC", "technology news and AI trends")
-TIMEZONE              = os.getenv("TIMEZONE", "UTC")
-VISUAL_POST_INDEX     = int(os.getenv("VISUAL_POST_INDEX", "2"))
+# Optional
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
 
-_raw_times = os.getenv("POST_TIMES", "08:00,14:00,20:00")
-POST_TIMES = [t.strip() for t in _raw_times.split(",") if t.strip()]
-
-if not POST_TIMES:
-    POST_TIMES = ["08:00", "14:00", "20:00"]
+# Schedule — defaults to BD times in Asia/Dhaka
+TIMEZONE   = os.getenv("TIMEZONE", "Asia/Dhaka")
+POST_TIMES = [t.strip() for t in os.getenv("POST_TIMES", "10:00,20:00,23:00").split(",") if t.strip()]

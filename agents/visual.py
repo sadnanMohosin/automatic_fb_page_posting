@@ -1,10 +1,10 @@
 """
 Visual generation module.
 
-Priority order per visual_type:
-  chart      → Matplotlib (free, local)
-  flowchart  → mermaid.ink API (free, no auth)
-  image      → Google Imagen 3 via google-generativeai, falls back to Matplotlib chart
+  chart      → Matplotlib (free, local)           — used for tutorial data visuals
+  flowchart  → mermaid.ink API (free, no auth)    — used for tutorial process diagrams
+  quote      → Matplotlib dark-bg text image      — used for 11 PM motivational post
+  image      → Google Imagen 3 (optional)         — fallback to chart if key missing
 """
 
 import base64
@@ -52,6 +52,10 @@ def generate_chart(config: dict) -> str:
 
     colors = _PALETTE[: len(labels)]
 
+    x_values   = config.get("x_values", [])
+    y_values   = config.get("y_values", [])
+    hist_data  = config.get("data", [])
+
     if chart_type == "bar":
         bars = ax.bar(labels, values, color=colors, edgecolor="white", linewidth=1.5, width=0.6)
         ax.bar_label(bars, padding=4, fontsize=11, fontweight="bold")
@@ -72,6 +76,14 @@ def generate_chart(config: dict) -> str:
         for at in autotexts:
             at.set_fontweight("bold")
             at.set_fontsize(11)
+    elif chart_type == "scatter":
+        ax.scatter(x_values, y_values, color=_FACEBOOK_BLUE, s=80, alpha=0.75, edgecolors="white", linewidth=0.8)
+        ax.set_xlim(min(x_values) * 0.9, max(x_values) * 1.1)
+        ax.set_ylim(min(y_values) * 0.9, max(y_values) * 1.1)
+    elif chart_type == "histogram":
+        import numpy as np
+        ax.hist(hist_data, bins="auto", color=_FACEBOOK_BLUE, edgecolor="white", linewidth=0.8, alpha=0.85)
+        ax.set_ylim(0, None)
 
     ax.set_title(title, fontsize=16, fontweight="bold", pad=16, color="#1c1e21")
     if xlabel and chart_type != "pie":
@@ -161,6 +173,77 @@ def _fallback_chart(config: dict) -> str:
     })
 
 
+# ── motivational quote image ──────────────────────────────────────────────────
+
+def generate_quote_image(paragraphs: list[str]) -> str:
+    """
+    Render a motivational quote as bold white text on a pure black background.
+    Mimics the clean tweet-screenshot style (Jeff Moore / stoic quote pages).
+
+    `paragraphs` is a list of strings; each is rendered as a separate block
+    separated by a blank line, exactly like the reference screenshots.
+    """
+    import textwrap
+
+    # Wrap each paragraph independently at ~30 chars so lines stay short & punchy
+    wrapped_blocks: list[str] = []
+    for para in paragraphs:
+        lines = []
+        for raw_line in para.split("\n"):
+            lines.append(textwrap.fill(raw_line.strip(), width=30))
+        wrapped_blocks.append("\n".join(lines))
+
+    full_text = "\n\n".join(wrapped_blocks)
+    total_lines = full_text.count("\n") + 1 + wrapped_blocks.count("\n\n")
+
+    # Scale figure height to content; keep it portrait (phone-friendly)
+    fig_h = max(7.0, total_lines * 0.55 + 4.5)
+    fig = plt.figure(figsize=(8, fig_h))
+    fig.patch.set_facecolor("#000000")
+    ax = fig.add_axes([0, 0, 1, 1])
+    ax.set_facecolor("#000000")
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.axis("off")
+
+    # Main quote text — left-padded, vertically centred slightly above mid
+    ax.text(
+        0.08, 0.56,
+        full_text,
+        ha="left",
+        va="center",
+        color="#ffffff",
+        fontsize=27,
+        fontweight="bold",
+        linespacing=1.75,
+        multialignment="left",
+        transform=ax.transAxes,
+        fontfamily="DejaVu Sans",
+    )
+
+    # Page name watermark — bottom-right, subtle grey
+    ax.text(
+        0.92, 0.04,
+        "Surrounded by Data",
+        ha="right",
+        va="bottom",
+        color="#555555",
+        fontsize=13,
+        fontstyle="italic",
+        transform=ax.transAxes,
+        fontfamily="DejaVu Sans",
+    )
+
+    out = _VISUALS_DIR / f"quote_{_ts()}.png"
+    plt.savefig(
+        out, dpi=150, bbox_inches="tight",
+        facecolor="#000000", pad_inches=0.6,
+    )
+    plt.close()
+    logger.info(f"Quote image saved → {out}")
+    return str(out)
+
+
 # ── public entry ──────────────────────────────────────────────────────────────
 
 def generate_visual(visual_type: str, config: dict) -> str:
@@ -171,4 +254,6 @@ def generate_visual(visual_type: str, config: dict) -> str:
         return generate_flowchart(config)
     if visual_type == "image":
         return generate_ai_image(config)
+    if visual_type == "quote":
+        return generate_quote_image(config.get("paragraphs", []))
     raise ValueError(f"Unknown visual_type: {visual_type!r}")
