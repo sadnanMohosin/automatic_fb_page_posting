@@ -2,15 +2,16 @@
 Facebook Auto-Poster — entry point.
 
 Daily schedule (Asia/Dhaka / Bangladesh time):
-  10:00 AM  → slot 0: Tech news digest     — 3 top tech/AI updates (English, text only)
+  10:00 AM  → slot 0: Tech news digest     — 3 top tech/AI updates with image
   08:00 PM  → slot 1: Bengali tutorial     — data/ML/AI lesson in Bengali + chart/flowchart
-  11:00 PM  → slot 2: Motivational quote   — bold white text on black background image
+  11:00 PM  → quote slot disabled for now
 
 Usage:
   python main.py              # start the scheduler (runs forever)
   python main.py --test 0     # run slot 0 (news digest) immediately and exit
   python main.py --test 1     # run slot 1 (Bengali tutorial) immediately and exit
-  python main.py --test 2     # run slot 2 (motivational quote) immediately and exit
+  python main.py --test v1    # run viral day content immediately and exit
+  python main.py --test v2    # run viral night content immediately and exit
 """
 
 import argparse
@@ -25,11 +26,11 @@ from agents.researcher import research_topic
 from agents.writer import (
     generate_news_digest,
     generate_tutorial_bengali,
-    generate_motivational_quote,
+    generate_viral_content,
 )
 from agents.visual import generate_visual
 from agents.topic_tracker import load_posted_topics, mark_topic_posted
-from poster.facebook import post_text, post_with_image
+from poster.facebook import post_with_image
 from utils.logger import get_logger
 
 logger = get_logger("main")
@@ -37,11 +38,17 @@ logger = get_logger("main")
 # ── slot handlers ─────────────────────────────────────────────────────────────
 
 def run_news_digest() -> None:
-    """10 AM BD — research top 3 tech/AI news and post as text."""
+    """10 AM BD — research top 3 tech/AI news and post with cover image."""
     logger.info("=== [Slot 1] Tech News Digest ===")
-    research = research_topic("top technology AI news updates today 2025")
-    content  = generate_news_digest(research)
-    result   = post_text(content["post_text"])
+    research   = research_topic("top technology AI news updates today")
+    content    = generate_news_digest(research)
+    headlines  = content.get("headlines", [])
+    image_path = generate_visual("news", {"headlines": headlines})
+    result     = post_with_image(content["post_text"], image_path)
+    try:
+        os.remove(image_path)
+    except OSError:
+        pass
     logger.info(f"News digest posted — id: {result.get('id')}")
 
 
@@ -71,36 +78,60 @@ def run_tutorial() -> None:
     logger.info(f"Tutorial posted — topic: {topic_en} | id: {result.get('id')}")
 
 
-def run_motivational_quote() -> None:
-    """11 PM BD — motivational quote rendered on dark background image."""
-    logger.info("=== [Slot 3] Motivational Quote ===")
-
-    content    = generate_motivational_quote()
-    paragraphs = content["quote_paragraphs"]
-    caption    = content["fb_caption"]
-
-    image_path = generate_visual("quote", {"paragraphs": paragraphs})
-    result = post_with_image(caption, image_path)
+def run_viral_day() -> None:
+    """Manual cron job — discussion-friendly daytime viral content."""
+    logger.info("=== [Manual Job] Viral Day Content ===")
+    research = research_topic("latest AI technology business and data career developments today")
+    content = generate_viral_content("day", research=research)
+    image_path = generate_visual(content.get("visual_type", "viral"), content.get("visual_config", {}))
+    result = post_with_image(content["post_text"], image_path)
 
     try:
         os.remove(image_path)
     except OSError:
         pass
 
-    logger.info(f"Quote posted — id: {result.get('id')}")
+    logger.info(f"Viral day post published — category: {content.get('category')} | id: {result.get('id')}")
+
+
+def run_viral_night() -> None:
+    """Manual cron job — save-worthy nighttime viral content."""
+    logger.info("=== [Manual Job] Viral Night Content ===")
+    content = generate_viral_content("night")
+    image_path = generate_visual(content.get("visual_type", "viral"), content.get("visual_config", {}))
+    result = post_with_image(content["post_text"], image_path)
+
+    try:
+        os.remove(image_path)
+    except OSError:
+        pass
+
+    logger.info(f"Viral night post published — category: {content.get('category')} | id: {result.get('id')}")
 
 
 # ── slot dispatch table ───────────────────────────────────────────────────────
 
-_SLOTS = [
+_SCHEDULED_SLOTS = [
     {"fn": run_news_digest,        "label": "Tech News Digest  [10:00 AM BD]"},
     {"fn": run_tutorial,           "label": "Bengali Tutorial  [08:00 PM BD]"},
-    {"fn": run_motivational_quote, "label": "Motivational Quote [11:00 PM BD]"},
+    # {"fn": run_motivational_quote, "label": "Motivational Quote [11:00 PM BD]"},
 ]
+
+_MANUAL_JOBS = {
+    "viral_day": {"fn": run_viral_day, "label": "Viral Day Content"},
+    "viral_night": {"fn": run_viral_night, "label": "Viral Night Content"},
+}
+
+_TEST_TARGETS = {
+    "0": {"fn": lambda: _safe_run(0), "label": "Tech News Digest"},
+    "1": {"fn": lambda: _safe_run(1), "label": "Bengali Tutorial"},
+    "v1": {"fn": run_viral_day, "label": "Viral Day Content"},
+    "v2": {"fn": run_viral_night, "label": "Viral Night Content"},
+}
 
 
 def _safe_run(slot_index: int) -> None:
-    slot = _SLOTS[slot_index]
+    slot = _SCHEDULED_SLOTS[slot_index]
     try:
         slot["fn"]()
     except Exception:
@@ -112,7 +143,7 @@ def _safe_run(slot_index: int) -> None:
 def build_scheduler() -> BlockingScheduler:
     scheduler = BlockingScheduler(timezone=TIMEZONE)
 
-    for i, (time_str, slot) in enumerate(zip(POST_TIMES, _SLOTS)):
+    for i, (time_str, slot) in enumerate(zip(POST_TIMES, _SCHEDULED_SLOTS)):
         hour, minute = map(int, time_str.split(":"))
         scheduler.add_job(
             _safe_run,
@@ -134,22 +165,24 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Facebook Auto-Poster")
     parser.add_argument(
         "--test",
-        metavar="SLOT",
-        type=int,
-        choices=range(len(_SLOTS)),
-        help="Run a single slot immediately and exit (0=news, 1=tutorial, 2=quote)",
+        metavar="TARGET",
+        choices=sorted(_TEST_TARGETS.keys()),
+        help="Run a target immediately and exit (0=news, 1=tutorial, v1=viral_day, v2=viral_night)",
     )
     args = parser.parse_args()
 
     logger.info("=" * 60)
     logger.info("Facebook Auto-Poster — Bangladesh Schedule")
-    for i, (t, s) in enumerate(zip(POST_TIMES, _SLOTS)):
+    for i, (t, s) in enumerate(zip(POST_TIMES, _SCHEDULED_SLOTS)):
         logger.info(f"  {t} {TIMEZONE}  →  {s['label']}")
+    logger.info("  Quote slot disabled for now.")
+    for job_name, job in _MANUAL_JOBS.items():
+        logger.info(f"  Manual job: {job_name}  →  {job['label']}")
     logger.info("=" * 60)
 
-    if args.test is not None:
-        logger.info(f"TEST MODE: running slot {args.test} immediately")
-        _safe_run(args.test)
+    if args.test:
+        logger.info(f"TEST MODE: running {args.test} immediately")
+        _TEST_TARGETS[args.test]["fn"]()
         return
 
     scheduler = build_scheduler()

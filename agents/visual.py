@@ -3,8 +3,9 @@ Visual generation module.
 
   chart      → Matplotlib (free, local)           — used for tutorial data visuals
   flowchart  → mermaid.ink API (free, no auth)    — used for tutorial process diagrams
-  quote      → Matplotlib dark-bg text image      — used for 11 PM motivational post
-  image      → Google Imagen 3 (optional)         — fallback to chart if key missing
+  quote      → Matplotlib dark-bg text image      — archived quote image renderer
+  image      → Google Imagen 3 (optional)         — generic AI image
+  viral      → illustration-first social image    — viral/career/news opinion posts
 """
 
 import base64
@@ -134,6 +135,30 @@ def generate_flowchart(config: dict) -> str:
 
 # ── AI image ──────────────────────────────────────────────────────────────────
 
+def _generate_google_image(prompt: str, out_path: Path, aspect_ratio: str = "1:1") -> str:
+    """Generate an image with Google's current GenAI SDK and save it locally."""
+    from google import genai
+    from google.genai import types
+
+    client = genai.Client(api_key=GOOGLE_API_KEY)
+    response = client.models.generate_images(
+        model="imagen-4.0-generate-001",
+        prompt=prompt,
+        config=types.GenerateImagesConfig(
+            number_of_images=1,
+            aspect_ratio=aspect_ratio,
+            person_generation="allow_adult",
+            output_mime_type="image/png",
+            enhance_prompt=True,
+        ),
+    )
+
+    if not response.generated_images:
+        raise RuntimeError("Google GenAI returned no images")
+
+    response.generated_images[0].image.save(str(out_path))
+    return str(out_path)
+
 def generate_ai_image(config: dict) -> str:
     prompt = config.get("prompt", "A professional technology concept illustration, clean and modern")
 
@@ -142,24 +167,13 @@ def generate_ai_image(config: dict) -> str:
         return _fallback_chart(config)
 
     try:
-        import google.generativeai as genai
-        genai.configure(api_key=GOOGLE_API_KEY)
-
-        model = genai.ImageGenerationModel("imagen-3.0-generate-001")
-        result = model.generate_images(
-            prompt=prompt,
-            number_of_images=1,
-            aspect_ratio="1:1",
-            safety_filter_level="block_some",
-            person_generation="allow_adult",
-        )
         out = _VISUALS_DIR / f"image_{_ts()}.png"
-        result.images[0].save(str(out))
+        _generate_google_image(prompt, out, aspect_ratio="1:1")
         logger.info(f"AI image saved → {out}")
         return str(out)
 
     except Exception as exc:
-        logger.warning(f"Google Imagen failed ({exc}); falling back to Matplotlib chart")
+        logger.warning(f"Google GenAI image failed ({exc}); falling back to Matplotlib chart")
         return _fallback_chart(config)
 
 
@@ -173,31 +187,290 @@ def _fallback_chart(config: dict) -> str:
     })
 
 
+def _render_viral_card(config: dict) -> str:
+    import textwrap
+    from matplotlib.patches import FancyBboxPatch, Circle
+
+    title = config.get("title", "Career Signal")
+    subtitle = config.get("subtitle", "")
+    tag = config.get("tag", "VIRAL")
+    bullets = (config.get("bullets") or [])[:3]
+
+    fig = plt.figure(figsize=(8, 8))
+    fig.patch.set_facecolor("#fff8ef")
+    ax = fig.add_axes([0, 0, 1, 1])
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.axis("off")
+
+    ax.add_patch(Circle((0.16, 0.84), 0.12, transform=ax.transAxes, color="#ffd86b", alpha=0.85))
+    ax.add_patch(Circle((0.88, 0.16), 0.16, transform=ax.transAxes, color="#b8e0ff", alpha=0.65))
+    ax.add_patch(Circle((0.82, 0.82), 0.08, transform=ax.transAxes, color="#ff8b6a", alpha=0.55))
+
+    ax.add_patch(FancyBboxPatch(
+        (0.07, 0.86), 0.2, 0.055,
+        boxstyle="round,pad=0.012,rounding_size=0.025",
+        transform=ax.transAxes,
+        facecolor="#111111",
+        edgecolor="none",
+    ))
+    ax.text(
+        0.17, 0.888, tag.upper(),
+        ha="center", va="center",
+        color="#ffffff", fontsize=11, fontweight="bold",
+        transform=ax.transAxes, fontfamily="DejaVu Sans",
+    )
+
+    ax.text(
+        0.07, 0.75, textwrap.fill(title, width=16),
+        ha="left", va="top",
+        color="#111111", fontsize=30, fontweight="bold",
+        linespacing=1.05,
+        transform=ax.transAxes, fontfamily="DejaVu Sans",
+    )
+
+    if subtitle:
+        ax.text(
+            0.07, 0.59, textwrap.fill(subtitle, width=34),
+            ha="left", va="top",
+            color="#4f5560", fontsize=13.5,
+            linespacing=1.35,
+            transform=ax.transAxes, fontfamily="DejaVu Sans",
+        )
+
+    card_y = 0.21 if bullets else 0.27
+    card_h = 0.3 if bullets else 0.22
+    ax.add_patch(FancyBboxPatch(
+        (0.07, card_y), 0.86, card_h,
+        boxstyle="round,pad=0.018,rounding_size=0.04",
+        transform=ax.transAxes,
+        facecolor="#ffffff",
+        edgecolor="#ecd8c8",
+        linewidth=1.2,
+    ))
+
+    if bullets:
+        for i, bullet in enumerate(bullets):
+            y = card_y + card_h - 0.075 - i * 0.082
+            ax.add_patch(Circle((0.11, y + 0.005), 0.009, transform=ax.transAxes, color="#1877F2"))
+            ax.text(
+                0.135, y, textwrap.fill(bullet, width=28),
+                ha="left", va="center",
+                color="#16202a", fontsize=15, fontweight="bold",
+                linespacing=1.2,
+                transform=ax.transAxes, fontfamily="DejaVu Sans",
+            )
+    else:
+        ax.text(
+            0.11, card_y + card_h / 2, "Fresh angle. Clear takeaway.",
+            ha="left", va="center",
+            color="#16202a", fontsize=16, fontweight="bold",
+            transform=ax.transAxes, fontfamily="DejaVu Sans",
+        )
+
+    ax.text(
+        0.07, 0.08, "Surrounded by Data",
+        ha="left", va="center",
+        color="#111111", fontsize=14, fontweight="bold",
+        transform=ax.transAxes, fontfamily="DejaVu Sans",
+    )
+    ax.text(
+        0.93, 0.08, "Bangla-first data/AI",
+        ha="right", va="center",
+        color="#6d737d", fontsize=11.5,
+        transform=ax.transAxes, fontfamily="DejaVu Sans",
+    )
+
+    out = _VISUALS_DIR / f"viral_{_ts()}.png"
+    plt.savefig(out, dpi=160, bbox_inches="tight", facecolor=fig.get_facecolor(), pad_inches=0.2)
+    plt.close()
+    logger.info(f"Viral image saved → {out}")
+    return str(out)
+
+
+# ── news digest cover image ───────────────────────────────────────────────────
+
+def generate_news_image(headlines: list | None = None) -> str:
+    """Create a polished square news cover with strong hierarchy and 3 headline cards."""
+    import textwrap
+    from datetime import date
+    from matplotlib.patches import FancyBboxPatch, Circle
+
+    fig = plt.figure(figsize=(8, 8))
+    fig.patch.set_facecolor("#07111f")
+    ax = fig.add_axes([0, 0, 1, 1])
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.axis("off")
+
+    # Subtle layered background
+    gradient = [[0.0, 0.2], [0.35, 1.0]]
+    ax.imshow(
+        gradient,
+        extent=[0, 1, 0, 1],
+        origin="lower",
+        cmap="Blues",
+        alpha=0.23,
+        aspect="auto",
+    )
+    ax.add_patch(Circle((0.88, 0.88), 0.18, transform=ax.transAxes, color="#1877F2", alpha=0.09))
+    ax.add_patch(Circle((0.12, 0.12), 0.14, transform=ax.transAxes, color="#42B72A", alpha=0.06))
+
+    # Top tag
+    ax.add_patch(FancyBboxPatch(
+        (0.07, 0.88), 0.2, 0.05,
+        boxstyle="round,pad=0.012,rounding_size=0.02",
+        transform=ax.transAxes,
+        facecolor="#1877F2",
+        edgecolor="none",
+        alpha=0.95,
+    ))
+    ax.text(
+        0.17, 0.905, "DAILY BRIEF",
+        ha="center", va="center",
+        color="#ffffff", fontsize=11, fontweight="bold",
+        transform=ax.transAxes, fontfamily="DejaVu Sans",
+    )
+
+    # Main title block
+    ax.text(
+        0.07, 0.81, "Tech News",
+        ha="left", va="center",
+        color="#ffffff", fontsize=31, fontweight="bold",
+        transform=ax.transAxes, fontfamily="DejaVu Sans",
+    )
+    ax.text(
+        0.07, 0.74, "Digest",
+        ha="left", va="center",
+        color="#8ec5ff", fontsize=31, fontweight="bold",
+        transform=ax.transAxes, fontfamily="DejaVu Sans",
+    )
+    ax.text(
+        0.07, 0.68, "Top AI and tech updates at a glance",
+        ha="left", va="center",
+        color="#a9b7c6", fontsize=12.5,
+        transform=ax.transAxes, fontfamily="DejaVu Sans",
+    )
+
+    # Date pill
+    ax.add_patch(FancyBboxPatch(
+        (0.62, 0.76), 0.28, 0.07,
+        boxstyle="round,pad=0.015,rounding_size=0.025",
+        transform=ax.transAxes,
+        facecolor="#101c2d",
+        edgecolor="#23415f",
+        linewidth=1.2,
+    ))
+    ax.text(
+        0.76, 0.795, date.today().strftime("%B %d, %Y"),
+        ha="center", va="center",
+        color="#d8e7f7", fontsize=13, fontweight="bold",
+        transform=ax.transAxes, fontfamily="DejaVu Sans",
+    )
+
+    card_specs = [
+        (0.07, 0.50, 0.86, 0.12),
+        (0.07, 0.34, 0.86, 0.12),
+        (0.07, 0.18, 0.86, 0.12),
+    ]
+    fallback = ["AI market moves fast", "Platforms keep shipping", "Builders need context"]
+    display_headlines = (headlines or fallback)[:3]
+
+    for i, (headline, (x, y, w, h)) in enumerate(zip(display_headlines, card_specs), start=1):
+        ax.add_patch(FancyBboxPatch(
+            (x, y), w, h,
+            boxstyle="round,pad=0.012,rounding_size=0.03",
+            transform=ax.transAxes,
+            facecolor="#0d1726",
+            edgecolor="#1f324a",
+            linewidth=1.3,
+            alpha=0.98,
+        ))
+        ax.add_patch(FancyBboxPatch(
+            (x + 0.018, y + 0.024), 0.065, h - 0.048,
+            boxstyle="round,pad=0.01,rounding_size=0.02",
+            transform=ax.transAxes,
+            facecolor="#1877F2" if i == 1 else ("#42B72A" if i == 2 else "#F7B928"),
+            edgecolor="none",
+            alpha=0.95,
+        ))
+        ax.text(
+            x + 0.05, y + h / 2, f"{i}",
+            ha="center", va="center",
+            color="#ffffff", fontsize=18, fontweight="bold",
+            transform=ax.transAxes, fontfamily="DejaVu Sans",
+        )
+        wrapped = textwrap.fill(headline, width=26)
+        ax.text(
+            x + 0.105, y + h / 2, wrapped,
+            ha="left", va="center",
+            color="#ffffff", fontsize=16, fontweight="bold",
+            linespacing=1.3,
+            transform=ax.transAxes, fontfamily="DejaVu Sans",
+        )
+
+    ax.plot([0.07, 0.93], [0.12, 0.12], color="#20364f", linewidth=1.1, transform=ax.transAxes)
+    ax.text(
+        0.07, 0.07, "Surrounded by Data",
+        ha="left", va="center",
+        color="#d7e4f3", fontsize=14, fontweight="bold",
+        transform=ax.transAxes, fontfamily="DejaVu Sans",
+    )
+    ax.text(
+        0.93, 0.07, "AI • Data • Tech",
+        ha="right", va="center",
+        color="#6f849b", fontsize=11.5,
+        transform=ax.transAxes, fontfamily="DejaVu Sans",
+    )
+
+    out = _VISUALS_DIR / f"news_{_ts()}.png"
+    plt.savefig(
+        out, dpi=160, bbox_inches="tight",
+        facecolor="#07111f", pad_inches=0.22,
+    )
+    plt.close()
+    logger.info(f"News image saved → {out}")
+    return str(out)
+
+
+# ── viral social image ────────────────────────────────────────────────────────
+
+def generate_viral_image(config: dict) -> str:
+    """Generate a viral-post image using AI illustration when available, else a polished local card."""
+    if GOOGLE_API_KEY and config.get("prompt"):
+        try:
+            out = _VISUALS_DIR / f"viral_{_ts()}.png"
+            _generate_google_image(config["prompt"], out, aspect_ratio="1:1")
+            logger.info(f"Viral AI image saved → {out}")
+            return str(out)
+        except Exception as exc:
+            logger.warning(f"Viral AI image failed ({exc}); falling back to topic card")
+
+    return _render_viral_card(config)
+
+
 # ── motivational quote image ──────────────────────────────────────────────────
 
 def generate_quote_image(paragraphs: list[str]) -> str:
     """
     Render a motivational quote as bold white text on a pure black background.
-    Mimics the clean tweet-screenshot style (Jeff Moore / stoic quote pages).
-
-    `paragraphs` is a list of strings; each is rendered as a separate block
-    separated by a blank line, exactly like the reference screenshots.
+    Large punchy text; branded page name with blue verified dot at the bottom.
     """
     import textwrap
 
-    # Wrap each paragraph independently at ~30 chars so lines stay short & punchy
+    # Wrap each paragraph at ~28 chars — forces short punchy lines
     wrapped_blocks: list[str] = []
     for para in paragraphs:
         lines = []
         for raw_line in para.split("\n"):
-            lines.append(textwrap.fill(raw_line.strip(), width=30))
+            lines.append(textwrap.fill(raw_line.strip(), width=28))
         wrapped_blocks.append("\n".join(lines))
 
     full_text = "\n\n".join(wrapped_blocks)
-    total_lines = full_text.count("\n") + 1 + wrapped_blocks.count("\n\n")
+    total_lines = sum(b.count("\n") + 1 for b in wrapped_blocks) + len(wrapped_blocks) - 1
 
-    # Scale figure height to content; keep it portrait (phone-friendly)
-    fig_h = max(7.0, total_lines * 0.55 + 4.5)
+    # Scale height to content — portrait, phone-friendly
+    fig_h = max(8.0, total_lines * 0.72 + 5.5)
     fig = plt.figure(figsize=(8, fig_h))
     fig.patch.set_facecolor("#000000")
     ax = fig.add_axes([0, 0, 1, 1])
@@ -206,30 +479,49 @@ def generate_quote_image(paragraphs: list[str]) -> str:
     ax.set_ylim(0, 1)
     ax.axis("off")
 
-    # Main quote text — left-padded, vertically centred slightly above mid
+    # Thin top accent line
+    ax.axhline(y=0.96, xmin=0.06, xmax=0.94, color="#1877F2", linewidth=2, alpha=0.6)
+
+    # Main quote text — large, left-padded, vertically centred
     ax.text(
-        0.08, 0.56,
+        0.07, 0.58,
         full_text,
         ha="left",
         va="center",
         color="#ffffff",
-        fontsize=27,
+        fontsize=34,
         fontweight="bold",
-        linespacing=1.75,
+        linespacing=1.65,
         multialignment="left",
         transform=ax.transAxes,
         fontfamily="DejaVu Sans",
     )
 
-    # Page name watermark — bottom-right, subtle grey
+    # Bottom separator line
+    ax.axhline(y=0.10, xmin=0.06, xmax=0.94, color="#222222", linewidth=1.5)
+
+    # Blue verified dot
     ax.text(
-        0.92, 0.04,
+        0.07, 0.055,
+        "●",
+        ha="left",
+        va="center",
+        color="#1877F2",
+        fontsize=18,
+        fontweight="bold",
+        transform=ax.transAxes,
+        fontfamily="DejaVu Sans",
+    )
+
+    # Page name — prominent, right of dot
+    ax.text(
+        0.135, 0.055,
         "Surrounded by Data",
-        ha="right",
-        va="bottom",
-        color="#555555",
-        fontsize=13,
-        fontstyle="italic",
+        ha="left",
+        va="center",
+        color="#dddddd",
+        fontsize=18,
+        fontweight="bold",
         transform=ax.transAxes,
         fontfamily="DejaVu Sans",
     )
@@ -237,7 +529,7 @@ def generate_quote_image(paragraphs: list[str]) -> str:
     out = _VISUALS_DIR / f"quote_{_ts()}.png"
     plt.savefig(
         out, dpi=150, bbox_inches="tight",
-        facecolor="#000000", pad_inches=0.6,
+        facecolor="#000000", pad_inches=0.5,
     )
     plt.close()
     logger.info(f"Quote image saved → {out}")
@@ -254,6 +546,10 @@ def generate_visual(visual_type: str, config: dict) -> str:
         return generate_flowchart(config)
     if visual_type == "image":
         return generate_ai_image(config)
+    if visual_type == "viral":
+        return generate_viral_image(config)
     if visual_type == "quote":
         return generate_quote_image(config.get("paragraphs", []))
+    if visual_type == "news":
+        return generate_news_image(config.get("headlines"))
     raise ValueError(f"Unknown visual_type: {visual_type!r}")

@@ -139,8 +139,9 @@ python main.py
 
 ```bash
 python main.py --test 0    # Tech news digest (10 AM slot)
+python main.py --test v1   # viral content mid-day
 python main.py --test 1    # Bengali tutorial with visual (8 PM slot)
-python main.py --test 2    # Motivational quote image (11 PM slot)
+python main.py --test v2   # viral content late night
 ```
 
 ---
