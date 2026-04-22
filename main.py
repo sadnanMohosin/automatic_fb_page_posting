@@ -125,8 +125,8 @@ _MANUAL_JOBS = {
 _TEST_TARGETS = {
     "0": {"fn": lambda: _safe_run(0), "label": "Tech News Digest"},
     "1": {"fn": lambda: _safe_run(1), "label": "Bengali Tutorial"},
-    "v1": {"fn": run_viral_day, "label": "Viral Day Content"},
-    "v2": {"fn": run_viral_night, "label": "Viral Night Content"},
+    "v1": {"fn": lambda: _safe_named_run("Viral Day Content", run_viral_day), "label": "Viral Day Content"},
+    "v2": {"fn": lambda: _safe_named_run("Viral Night Content", run_viral_night), "label": "Viral Night Content"},
 }
 
 
@@ -139,6 +139,13 @@ def _safe_run(slot_index: int) -> None:
 
 
 # ── scheduler ─────────────────────────────────────────────────────────────────
+
+def _safe_named_run(label: str, fn) -> None:
+    try:
+        fn()
+    except Exception:
+        logger.exception(f"{label} failed")
+
 
 def build_scheduler() -> BlockingScheduler:
     scheduler = BlockingScheduler(timezone=TIMEZONE)

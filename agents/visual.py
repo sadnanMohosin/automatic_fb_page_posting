@@ -4,13 +4,15 @@ Visual generation module.
   chart      → Matplotlib (free, local)           — used for tutorial data visuals
   flowchart  → mermaid.ink API (free, no auth)    — used for tutorial process diagrams
   quote      → Matplotlib dark-bg text image      — archived quote image renderer
-  image      → Google Imagen 3 (optional)         — generic AI image
+  image      → Google Imagen 4 (optional)         — generic AI image
   viral      → illustration-first social image    — viral/career/news opinion posts
 """
 
 import base64
+import importlib
 import os
 from datetime import datetime
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 import matplotlib
@@ -35,6 +37,97 @@ _PALETTE = ["#1877F2", "#42B72A", "#F02849", "#F7B928", "#898F9C", "#4267B2"]
 
 def _ts() -> str:
     return datetime.now().strftime("%Y%m%d_%H%M%S")
+
+
+def _package_version(dist_name: str) -> str | None:
+    try:
+        return version(dist_name)
+    except PackageNotFoundError:
+        return None
+
+
+def _google_sdk_summary() -> str:
+    installed = []
+    for dist_name in ("google-genai", "google-generativeai", "google-ai-generativelanguage", "google"):
+        dist_version = _package_version(dist_name)
+        if dist_version:
+            installed.append(f"{dist_name}={dist_version}")
+    return ", ".join(installed) if installed else "none detected"
+
+
+def _load_google_genai_sdk():
+    try:
+        genai = importlib.import_module("google.genai")
+        types = importlib.import_module("google.genai.types")
+        return genai, types
+    except Exception as exc:
+        raise RuntimeError(
+            "Google GenAI SDK import failed. This code expects the `google-genai` package "
+            "and the `google.genai` module. Installed Google SDKs: "
+            f"{_google_sdk_summary()}. Reinstall `google-genai` in the active environment "
+            "and remove conflicting packages such as `google-generativeai` or the standalone "
+            "`google` package if they are shadowing the namespace."
+        ) from exc
+
+
+def _find_base64_image_payload(node) -> str | None:
+    if isinstance(node, dict):
+        for key in ("bytesBase64Encoded", "imageBytes"):
+            value = node.get(key)
+            if isinstance(value, str) and value:
+                return value
+        for value in node.values():
+            found = _find_base64_image_payload(value)
+            if found:
+                return found
+    elif isinstance(node, list):
+        for item in node:
+            found = _find_base64_image_payload(item)
+            if found:
+                return found
+    return None
+
+
+def _generate_google_image_rest(prompt: str, out_path: Path, aspect_ratio: str = "1:1") -> str:
+    """Generate an image via the official Imagen REST endpoint when the SDK path is unavailable."""
+    url = "https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict"
+    payload = {
+        "instances": [{"prompt": prompt}],
+        "parameters": {
+            "sampleCount": 1,
+            "aspectRatio": aspect_ratio,
+            "personGeneration": "allow_adult",
+        },
+    }
+
+    resp = requests.post(
+        url,
+        headers={
+            "x-goog-api-key": GOOGLE_API_KEY,
+            "Content-Type": "application/json",
+        },
+        json=payload,
+        timeout=120,
+    )
+
+    try:
+        data = resp.json()
+    except Exception:
+        resp.raise_for_status()
+        raise RuntimeError("Google Imagen REST returned a non-JSON response")
+
+    if "error" in data:
+        err = data["error"]
+        raise RuntimeError(
+            f"Google Imagen REST error {err.get('code')}: {err.get('message')}"
+        )
+
+    image_b64 = _find_base64_image_payload(data)
+    if not image_b64:
+        raise RuntimeError("Google Imagen REST returned no image bytes in the response payload")
+
+    out_path.write_bytes(base64.b64decode(image_b64))
+    return str(out_path)
 
 
 # ── chart ─────────────────────────────────────────────────────────────────────
@@ -137,27 +230,39 @@ def generate_flowchart(config: dict) -> str:
 
 def _generate_google_image(prompt: str, out_path: Path, aspect_ratio: str = "1:1") -> str:
     """Generate an image with Google's current GenAI SDK and save it locally."""
-    from google import genai
-    from google.genai import types
+    sdk_error = None
 
-    client = genai.Client(api_key=GOOGLE_API_KEY)
-    response = client.models.generate_images(
-        model="imagen-4.0-generate-001",
-        prompt=prompt,
-        config=types.GenerateImagesConfig(
-            number_of_images=1,
-            aspect_ratio=aspect_ratio,
-            person_generation="allow_adult",
-            output_mime_type="image/png",
-            enhance_prompt=True,
-        ),
-    )
+    try:
+        genai, types = _load_google_genai_sdk()
 
-    if not response.generated_images:
-        raise RuntimeError("Google GenAI returned no images")
+        client = genai.Client(api_key=GOOGLE_API_KEY)
+        response = client.models.generate_images(
+            model="imagen-4.0-generate-001",
+            prompt=prompt,
+            config=types.GenerateImagesConfig(
+                number_of_images=1,
+                aspect_ratio=aspect_ratio,
+                person_generation="allow_adult",
+                output_mime_type="image/png",
+                enhance_prompt=True,
+            ),
+        )
 
-    response.generated_images[0].image.save(str(out_path))
-    return str(out_path)
+        if not response.generated_images:
+            raise RuntimeError("Google GenAI returned no images")
+
+        response.generated_images[0].image.save(str(out_path))
+        return str(out_path)
+    except Exception as exc:
+        sdk_error = exc
+        logger.warning(f"Google GenAI SDK path failed ({exc}); trying REST fallback")
+
+    try:
+        return _generate_google_image_rest(prompt, out_path, aspect_ratio=aspect_ratio)
+    except Exception as rest_exc:
+        raise RuntimeError(
+            f"Google image generation failed via SDK ({sdk_error}) and REST ({rest_exc})"
+        ) from rest_exc
 
 def generate_ai_image(config: dict) -> str:
     prompt = config.get("prompt", "A professional technology concept illustration, clean and modern")

@@ -37,7 +37,7 @@ Tavily API  ──►  researcher.py  ──►  writer.py (Claude Sonnet)
 | AI Writing | Claude Sonnet (`claude-sonnet-4-6`) | ~$0.22/month |
 | Charts & Graphs | Matplotlib (local, Python) | $0 |
 | Flowcharts | mermaid.ink API (free, no auth) | $0 |
-| AI Images | Google Imagen 3 (optional, only if `GOOGLE_API_KEY` set) | ~$0.02/image |
+| AI Images | Google Imagen 4 (`imagen-4.0-generate-001`, optional if `GOOGLE_API_KEY` set) | ~$0.02/image |
 | FB Posting | Facebook Graph API v19.0 | $0 |
 | Scheduling | APScheduler with `Asia/Dhaka` timezone | $0 |
 | Hosting | Railway free tier (or any VPS) | $0–$5/month |
@@ -103,6 +103,14 @@ FB_PAGE_ID=61572022241624        # Your Facebook Page numeric ID
 
 POST_TIMES=10:00,20:00,23:00     # Bangladesh times (slot 1, 2, 3)
 TIMEZONE=Asia/Dhaka
+```
+
+If AI image generation fails with `cannot import name 'genai' from 'google'`, reinstall the newer SDK in the same environment that runs the app:
+
+```bash
+py -m pip uninstall -y google-generativeai google-ai-generativelanguage google
+py -m pip install --upgrade pip
+py -m pip install --no-cache-dir google-genai
 ```
 
 ### 3. Get a Facebook Page Access Token
