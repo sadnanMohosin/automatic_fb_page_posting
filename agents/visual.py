@@ -228,6 +228,298 @@ def generate_flowchart(config: dict) -> str:
 
 # ── AI image ──────────────────────────────────────────────────────────────────
 
+def generate_table_visual(config: dict) -> str:
+    columns = (config.get("columns") or ["Column", "Value"])[:5]
+    rows = (config.get("rows") or [["Example", "42"], ["Another", "13"]])[:6]
+    title = config.get("title", "Result Table")
+    footer = config.get("footer", "")
+
+    fig = plt.figure(figsize=(8, 8))
+    fig.patch.set_facecolor("#f6f8fc")
+    ax = fig.add_axes([0, 0, 1, 1])
+    ax.axis("off")
+
+    ax.text(
+        0.07, 0.93, title,
+        ha="left", va="top",
+        fontsize=24, fontweight="bold",
+        color="#16202a", transform=ax.transAxes,
+        fontfamily="DejaVu Sans",
+    )
+    ax.text(
+        0.07, 0.875, "Rows that make the concept visible",
+        ha="left", va="top",
+        fontsize=11.5, color="#64748b",
+        transform=ax.transAxes, fontfamily="DejaVu Sans",
+    )
+
+    table_ax = fig.add_axes([0.07, 0.20, 0.86, 0.60])
+    table_ax.axis("off")
+    table = table_ax.table(
+        cellText=rows,
+        colLabels=columns,
+        loc="center",
+        cellLoc="left",
+        colLoc="left",
+        bbox=[0, 0, 1, 1],
+    )
+    table.auto_set_font_size(False)
+    table.set_fontsize(11)
+
+    for (row, col), cell in table.get_celld().items():
+        cell.set_edgecolor("#d9e2ef")
+        if row == 0:
+            cell.set_facecolor("#1877F2")
+            cell.set_text_props(color="white", weight="bold")
+        else:
+            cell.set_facecolor("#ffffff" if row % 2 else "#f8fbff")
+            cell.set_text_props(color="#1f2937")
+
+    if footer:
+        ax.text(
+            0.07, 0.10, footer,
+            ha="left", va="center",
+            fontsize=11.5, color="#475569",
+            transform=ax.transAxes, fontfamily="DejaVu Sans",
+        )
+
+    out = _VISUALS_DIR / f"table_{_ts()}.png"
+    plt.savefig(out, dpi=160, bbox_inches="tight", facecolor=fig.get_facecolor(), pad_inches=0.2)
+    plt.close()
+    logger.info(f"Table visual saved -> {out}")
+    return str(out)
+
+
+def generate_matrix_visual(config: dict) -> str:
+    import numpy as np
+
+    title = config.get("title", "Decision Matrix")
+    x_labels = config.get("x_labels", ["Predicted Yes", "Predicted No"])
+    y_labels = config.get("y_labels", ["Actual Yes", "Actual No"])
+    values = np.array(config.get("values", [[42, 8], [6, 31]]), dtype=float)
+    cell_labels = config.get("cell_labels") or [[str(int(v)) for v in row] for row in values]
+    footer = config.get("footer", "")
+
+    fig, ax = plt.subplots(figsize=(8, 8))
+    fig.patch.set_facecolor("#f8fafc")
+    ax.set_facecolor("#ffffff")
+
+    vmax = values.max() if values.size else 1
+    ax.imshow(values, cmap="Blues", vmin=0, vmax=max(vmax, 1))
+
+    ax.set_title(title, fontsize=22, fontweight="bold", pad=20, color="#16202a")
+    ax.set_xticks(range(len(x_labels)))
+    ax.set_xticklabels(x_labels, fontsize=11)
+    ax.set_yticks(range(len(y_labels)))
+    ax.set_yticklabels(y_labels, fontsize=11)
+
+    for i in range(values.shape[0]):
+        for j in range(values.shape[1]):
+            label = cell_labels[i][j] if i < len(cell_labels) and j < len(cell_labels[i]) else f"{values[i, j]:.0f}"
+            color = "white" if values[i, j] >= max(vmax * 0.55, 1) else "#0f172a"
+            ax.text(j, i, label, ha="center", va="center", fontsize=13, fontweight="bold", color=color)
+
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+
+    ax.set_xticks(np.arange(-0.5, len(x_labels), 1), minor=True)
+    ax.set_yticks(np.arange(-0.5, len(y_labels), 1), minor=True)
+    ax.grid(which="minor", color="white", linewidth=2)
+    ax.tick_params(which="minor", bottom=False, left=False)
+
+    if footer:
+        fig.text(0.07, 0.08, footer, ha="left", va="center", fontsize=11.5, color="#475569")
+
+    out = _VISUALS_DIR / f"matrix_{_ts()}.png"
+    plt.savefig(out, dpi=160, bbox_inches="tight", facecolor=fig.get_facecolor(), pad_inches=0.2)
+    plt.close()
+    logger.info(f"Matrix visual saved -> {out}")
+    return str(out)
+
+
+def generate_comparison_visual(config: dict) -> str:
+    import textwrap
+    from matplotlib.patches import FancyBboxPatch
+
+    title = config.get("title", "Comparison")
+    left_title = config.get("left_title", "Option A")
+    right_title = config.get("right_title", "Option B")
+    left_points = (config.get("left_points") or ["Point 1", "Point 2"])[:4]
+    right_points = (config.get("right_points") or ["Point 1", "Point 2"])[:4]
+    footer = config.get("footer", "")
+
+    fig = plt.figure(figsize=(8, 8))
+    fig.patch.set_facecolor("#fff9f2")
+    ax = fig.add_axes([0, 0, 1, 1])
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.axis("off")
+
+    ax.text(
+        0.07, 0.93, title,
+        ha="left", va="top",
+        fontsize=24, fontweight="bold",
+        color="#111827", transform=ax.transAxes,
+        fontfamily="DejaVu Sans",
+    )
+
+    cards = [
+        (0.07, "#e8f1ff", "#1877F2", left_title, left_points),
+        (0.52, "#eefbea", "#2f9e44", right_title, right_points),
+    ]
+
+    for x, bg, accent, heading, points in cards:
+        ax.add_patch(FancyBboxPatch(
+            (x, 0.20), 0.39, 0.62,
+            boxstyle="round,pad=0.02,rounding_size=0.03",
+            transform=ax.transAxes,
+            facecolor=bg, edgecolor="none",
+        ))
+        ax.add_patch(FancyBboxPatch(
+            (x + 0.03, 0.73), 0.22, 0.055,
+            boxstyle="round,pad=0.01,rounding_size=0.02",
+            transform=ax.transAxes,
+            facecolor=accent, edgecolor="none",
+        ))
+        ax.text(
+            x + 0.14, 0.758, heading,
+            ha="center", va="center",
+            fontsize=11.5, fontweight="bold",
+            color="white", transform=ax.transAxes,
+            fontfamily="DejaVu Sans",
+        )
+        for idx, point in enumerate(points):
+            y = 0.66 - idx * 0.12
+            ax.text(
+                x + 0.035, y, "-",
+                ha="left", va="center",
+                fontsize=18, fontweight="bold",
+                color=accent, transform=ax.transAxes,
+                fontfamily="DejaVu Sans",
+            )
+            ax.text(
+                x + 0.065, y, textwrap.fill(point, width=16),
+                ha="left", va="center",
+                fontsize=14, fontweight="bold",
+                color="#1f2937", transform=ax.transAxes,
+                fontfamily="DejaVu Sans",
+                linespacing=1.25,
+            )
+
+    if footer:
+        ax.text(
+            0.07, 0.09, footer,
+            ha="left", va="center",
+            fontsize=11.5, color="#4b5563",
+            transform=ax.transAxes, fontfamily="DejaVu Sans",
+        )
+
+    out = _VISUALS_DIR / f"comparison_{_ts()}.png"
+    plt.savefig(out, dpi=160, bbox_inches="tight", facecolor=fig.get_facecolor(), pad_inches=0.2)
+    plt.close()
+    logger.info(f"Comparison visual saved -> {out}")
+    return str(out)
+
+
+def generate_architecture_visual(config: dict) -> str:
+    import textwrap
+    from matplotlib.patches import FancyBboxPatch, FancyArrowPatch
+
+    title = config.get("title", "System Flow")
+    footer = config.get("footer", "")
+    stages = (config.get("stages") or [
+        {"label": "Input", "detail": "Raw events"},
+        {"label": "Transform", "detail": "Validate + clean"},
+        {"label": "Output", "detail": "Analytics table"},
+    ])[:6]
+
+    normalized_stages = []
+    for stage in stages:
+        if isinstance(stage, dict):
+            normalized_stages.append({
+                "label": stage.get("label", "Stage"),
+                "detail": stage.get("detail", ""),
+            })
+        else:
+            normalized_stages.append({"label": str(stage), "detail": ""})
+
+    fig = plt.figure(figsize=(8, 8))
+    fig.patch.set_facecolor("#f4f8ff")
+    ax = fig.add_axes([0, 0, 1, 1])
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.axis("off")
+
+    ax.text(
+        0.07, 0.93, title,
+        ha="left", va="top",
+        fontsize=24, fontweight="bold",
+        color="#0f172a", transform=ax.transAxes,
+        fontfamily="DejaVu Sans",
+    )
+
+    count = len(normalized_stages)
+    ys = [0.78 - i * (0.58 / max(count - 1, 1)) for i in range(count)]
+
+    for idx, (stage, y) in enumerate(zip(normalized_stages, ys), start=1):
+        ax.add_patch(FancyBboxPatch(
+            (0.16, y - 0.06), 0.68, 0.11,
+            boxstyle="round,pad=0.018,rounding_size=0.03",
+            transform=ax.transAxes,
+            facecolor="#ffffff", edgecolor="#d7e3f4",
+            linewidth=1.2,
+        ))
+        ax.add_patch(FancyBboxPatch(
+            (0.09, y - 0.035), 0.05, 0.05,
+            boxstyle="round,pad=0.01,rounding_size=0.015",
+            transform=ax.transAxes,
+            facecolor="#1877F2", edgecolor="none",
+        ))
+        ax.text(
+            0.115, y - 0.01, str(idx),
+            ha="center", va="center",
+            fontsize=12, fontweight="bold",
+            color="white", transform=ax.transAxes,
+            fontfamily="DejaVu Sans",
+        )
+        ax.text(
+            0.20, y + 0.01, stage["label"],
+            ha="left", va="center",
+            fontsize=15, fontweight="bold",
+            color="#0f172a", transform=ax.transAxes,
+            fontfamily="DejaVu Sans",
+        )
+        if stage["detail"]:
+            ax.text(
+                0.20, y - 0.03, textwrap.fill(stage["detail"], width=34),
+                ha="left", va="center",
+                fontsize=11.5, color="#475569",
+                transform=ax.transAxes, fontfamily="DejaVu Sans",
+            )
+        if idx < count:
+            next_y = ys[idx]
+            ax.add_patch(FancyArrowPatch(
+                (0.50, y - 0.065), (0.50, next_y + 0.055),
+                transform=ax.transAxes,
+                arrowstyle="-|>", mutation_scale=15,
+                linewidth=1.6, color="#8fb7e8",
+            ))
+
+    if footer:
+        ax.text(
+            0.07, 0.08, footer,
+            ha="left", va="center",
+            fontsize=11.5, color="#475569",
+            transform=ax.transAxes, fontfamily="DejaVu Sans",
+        )
+
+    out = _VISUALS_DIR / f"architecture_{_ts()}.png"
+    plt.savefig(out, dpi=160, bbox_inches="tight", facecolor=fig.get_facecolor(), pad_inches=0.2)
+    plt.close()
+    logger.info(f"Architecture visual saved -> {out}")
+    return str(out)
+
+
 def _generate_google_image(prompt: str, out_path: Path, aspect_ratio: str = "1:1") -> str:
     """Generate an image with Google's current GenAI SDK and save it locally."""
     sdk_error = None
@@ -649,6 +941,14 @@ def generate_visual(visual_type: str, config: dict) -> str:
         return generate_chart(config)
     if visual_type == "flowchart":
         return generate_flowchart(config)
+    if visual_type == "table":
+        return generate_table_visual(config)
+    if visual_type == "matrix":
+        return generate_matrix_visual(config)
+    if visual_type == "comparison":
+        return generate_comparison_visual(config)
+    if visual_type == "architecture":
+        return generate_architecture_visual(config)
     if visual_type == "image":
         return generate_ai_image(config)
     if visual_type == "viral":

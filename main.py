@@ -3,7 +3,7 @@ Facebook Auto-Poster — entry point.
 
 Daily schedule (Asia/Dhaka / Bangladesh time):
   10:00 AM  → slot 0: Tech news digest     — 3 top tech/AI updates with image
-  08:00 PM  → slot 1: Bengali tutorial     — data/ML/AI lesson in Bengali + chart/flowchart
+  08:00 PM  → slot 1: Bengali tutorial     — researched Bengali lesson with richer tutorial visuals
   11:00 PM  → quote slot disabled for now
 
 Usage:
@@ -22,14 +22,15 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from config import POST_TIMES, TIMEZONE
-from agents.researcher import research_topic
+from agents.researcher import research_topic, research_tutorial_topic
 from agents.writer import (
     generate_news_digest,
+    plan_tutorial_bengali,
     generate_tutorial_bengali,
     generate_viral_content,
 )
 from agents.visual import generate_visual
-from agents.topic_tracker import load_posted_topics, mark_topic_posted
+from agents.topic_tracker import load_tutorial_history, load_viral_history, mark_topic_posted, mark_viral_posted
 from poster.facebook import post_with_image
 from utils.logger import get_logger
 
@@ -53,11 +54,18 @@ def run_news_digest() -> None:
 
 
 def run_tutorial() -> None:
-    """8 PM BD — Bengali tutorial on data/ML/AI with chart or flowchart."""
+    """8 PM BD — researched Bengali tutorial on data/ML/AI with rich visuals."""
     logger.info("=== [Slot 2] Bengali Tutorial ===")
 
-    posted_topics = load_posted_topics()
-    content = generate_tutorial_bengali(posted_topics)
+    tutorial_history = load_tutorial_history()
+    tutorial_plan = plan_tutorial_bengali(tutorial_history)
+    tutorial_research = research_tutorial_topic(
+        tutorial_plan["topic_en"],
+        topic_family=tutorial_plan.get("topic_family", ""),
+        difficulty=tutorial_plan.get("difficulty", "intermediate"),
+        learning_goal=tutorial_plan.get("learning_goal", ""),
+    )
+    content = generate_tutorial_bengali(tutorial_history, tutorial_plan, tutorial_research)
 
     topic_en    = content["topic_en"]
     post_msg    = content["post_text"]
@@ -67,24 +75,41 @@ def run_tutorial() -> None:
     image_path = generate_visual(visual_type, visual_cfg)
     result = post_with_image(post_msg, image_path)
 
-    # Record the topic so it's never repeated
-    mark_topic_posted(topic_en)
+    mark_topic_posted({
+        "topic_en": topic_en,
+        "topic_family": content.get("topic_family", tutorial_plan.get("topic_family", "")),
+        "difficulty": content.get("difficulty", tutorial_plan.get("difficulty", "")),
+        "learning_goal": tutorial_plan.get("learning_goal", ""),
+        "research_query": tutorial_plan.get("research_query", ""),
+    })
 
     try:
         os.remove(image_path)
     except OSError:
         pass
 
-    logger.info(f"Tutorial posted — topic: {topic_en} | id: {result.get('id')}")
+    logger.info(
+        "Tutorial posted — "
+        f"topic: {topic_en} | family: {content.get('topic_family')} | "
+        f"difficulty: {content.get('difficulty')} | id: {result.get('id')}"
+    )
 
 
 def run_viral_day() -> None:
     """Manual cron job — discussion-friendly daytime viral content."""
     logger.info("=== [Manual Job] Viral Day Content ===")
     research = research_topic("latest AI technology business and data career developments today")
-    content = generate_viral_content("day", research=research)
+    viral_history = load_viral_history()
+    content = generate_viral_content("day", research=research, viral_history=viral_history)
     image_path = generate_visual(content.get("visual_type", "viral"), content.get("visual_config", {}))
     result = post_with_image(content["post_text"], image_path)
+    mark_viral_posted({
+        "slot_name": "day",
+        "category": content.get("category", ""),
+        "topic_en": content.get("topic_en", ""),
+        "example_entity": content.get("example_entity", "generic"),
+        "industry": content.get("industry", ""),
+    })
 
     try:
         os.remove(image_path)
@@ -97,9 +122,17 @@ def run_viral_day() -> None:
 def run_viral_night() -> None:
     """Manual cron job — save-worthy nighttime viral content."""
     logger.info("=== [Manual Job] Viral Night Content ===")
-    content = generate_viral_content("night")
+    viral_history = load_viral_history()
+    content = generate_viral_content("night", viral_history=viral_history)
     image_path = generate_visual(content.get("visual_type", "viral"), content.get("visual_config", {}))
     result = post_with_image(content["post_text"], image_path)
+    mark_viral_posted({
+        "slot_name": "night",
+        "category": content.get("category", ""),
+        "topic_en": content.get("topic_en", ""),
+        "example_entity": content.get("example_entity", "generic"),
+        "industry": content.get("industry", ""),
+    })
 
     try:
         os.remove(image_path)

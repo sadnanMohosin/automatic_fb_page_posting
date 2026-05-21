@@ -1,0 +1,58 @@
+[
+  {
+    "topic_en": "ETL Pipeline Basics",
+    "topic_family": "",
+    "difficulty": "unknown",
+    "learning_goal": "",
+    "research_query": "",
+    "posted_at": ""
+  },
+  {
+    "topic_en": "Decision Tree Algorithm",
+    "topic_family": "",
+    "difficulty": "unknown",
+    "learning_goal": "",
+    "research_query": "",
+    "posted_at": ""
+  },
+  {
+    "topic_en": "Confusion Matrix and Model Evaluation",
+    "topic_family": "",
+    "difficulty": "unknown",
+    "learning_goal": "",
+    "research_query": "",
+    "posted_at": ""
+  },
+  {
+    "topic_en": "SQL Joins Explained",
+    "topic_family": "",
+    "difficulty": "unknown",
+    "learning_goal": "",
+    "research_query": "",
+    "posted_at": ""
+  },
+  {
+    "topic_en": "Why Your RAG System Retrieves the Right Chunks But Still Gives Wrong Answers",
+    "topic_family": "ai_llm_systems",
+    "difficulty": "advanced",
+    "learning_goal": "Understand the three failure zones after retrieval — context assembly failure, LLM grounding failure, and answer faithfulness failure — and learn how to detect and fix each one independently.",
+    "research_query": "RAG retrieval succeeds but LLM generates wrong answer — grounding failure faithfulness failure context assembly issues production debugging tradeoffs 2024",
+    "posted_at": "2026-04-26T21:10:10"
+  },
+  {
+    "topic_en": "Target Leakage Through Aggregation: When Your Feature Already Knows the Answer",
+    "topic_family": "feature_engineering",
+    "difficulty": "intermediate",
+    "learning_goal": "Readers should understand how aggregation-based features (group means, rolling stats, historical ratios) can leak target information when computed incorrectly, how to identify leakage by checking the time boundary of each feature, and how to fix it using proper temporal windowing and leave-one-out encoding techniques.",
+    "research_query": "target leakage through aggregation features in machine learning: group mean encoding leakage, rolling window leakage pitfalls, time-based train-test split vs random split leakage examples, leave-one-out encoding to prevent leakage, real-world case studies of aggregation leakage causing model failure in production",
+    "posted_at": "2026-04-27T21:43:00"
+  },
+  {
+    "topic_en": "Why VACUUM and ANALYZE Matter More Than Your Query Rewrite in PostgreSQL",
+    "topic_family": "databases_and_python",
+    "difficulty": "advanced",
+    "learning_goal": "Understand what VACUUM and ANALYZE actually do under the hood, when PostgreSQL's query planner goes wrong due to stale stats or bloat, how autovacuum can silently fail under heavy write workloads, and how to diagnose these issues before blaming the query.",
+    "research_query": "PostgreSQL VACUUM ANALYZE query planner wrong execution plan table bloat dead tuples autovacuum failure high write workload pg_stat_user_tables diagnosis pitfalls",
+    "posted_at": "2026-04-30T20:53:19"
+  }
+]

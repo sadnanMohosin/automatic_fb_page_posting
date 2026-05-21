@@ -2,7 +2,8 @@
 Three content generators, one per daily post slot:
 
   generate_news_digest(research)         → 10 AM BD  — 3 top tech/AI news items (Bengali)
-  generate_tutorial_bengali(posted)      → 8 PM BD   — Bengali lesson with visual config
+  plan_tutorial_bengali(history)         → 8 PM BD   — choose family/difficulty/topic for the tutorial
+  generate_tutorial_bengali(...)         → 8 PM BD   — researched Bengali lesson with rich visual config
   generate_motivational_quote()          → 11 PM BD  — Short motivational quote for image
 """
 
@@ -261,68 +262,425 @@ def generate_news_digest(research: str) -> dict:
 # ── slot 2: Bengali tutorial (8 PM BD) ───────────────────────────────────────
 
 _TUTORIAL_SYSTEM = """\
-You are an expert Bengali-speaking educator in data science, machine learning, statistics, AI, databases, and data engineering.
-You write clear, beginner-friendly lessons in Bengali for Facebook.
-- Use simple, everyday Bengali words — avoid overly formal language
-- Use relatable Bangladeshi examples where possible
-- Keep post text 300–500 words in Bengali
-- Visual labels/data must be in English (for chart/diagram rendering)
-Return valid JSON only — no markdown, no extra text.
+You are an expert Bengali-speaking educator for a Bangla-first Facebook page about data, AI, analytics, SQL, and engineering.
+You do NOT write generic chapter summaries. You make complex topics feel learnable, practical, and save-worthy.
+The audience is mixed:
+- curious beginners
+- job-seekers trying to grow into data roles
+- intermediate practitioners who want sharper mental models
+
+Writing rules:
+- Use clear, conversational Bengali
+- Use familiar English technical words when they sound natural
+- Keep sections short and skimmable for Facebook
+- Teach with one strong example, not a wall of theory
+- Make the post feel helpful, not academic and not engagement bait
+- Visual labels/data must be in English
+Return valid JSON only — no markdown, no commentary.
 """
 
-_TUTORIAL_PROMPT = """\
-Already-covered topics (DO NOT repeat any of these):
-{posted}
+_TUTORIAL_PLAN_SYSTEM = """\
+You are a curriculum strategist for a Bangla-first Facebook page about data careers and AI.
+This page covers the full data ecosystem: data analytics, data science, machine learning, AI, data engineering,
+data warehousing, BI, statistics, databases, experimentation, and applied systems.
+Choose tutorial topics that feel sharper than textbook 101 topics.
+Prefer practical concepts, failure modes, tradeoffs, debugging situations, architectural thinking, or decision-making skills.
+Keep originality high: do not recycle a tiny fixed menu of topics.
+Return one valid JSON object only.
+"""
 
-Pick ONE fresh, specific topic from these domains:
-Statistics, Data Science, Data Analytics, Data Engineering, Machine Learning, AI/LLMs,
-Data Warehousing, Database Design, SQL, Python for Data, Probability, Feature Engineering,
-Model Evaluation, Deep Learning, NLP, Computer Vision, Cloud Data Services, ETL pipelines.
+_TUTORIAL_DIFFICULTIES = {
+    "foundation": {
+        "label": "Foundation Refresh",
+        "guidance": (
+            "Pick a foundational concept with a practical twist. It still must feel specific and useful, "
+            "not like a broad beginner chapter title."
+        ),
+    },
+    "intermediate": {
+        "label": "Intermediate Builder",
+        "guidance": (
+            "Pick a practical concept that real learners often misuse, misunderstand, or need in actual work."
+        ),
+    },
+    "advanced": {
+        "label": "Advanced But Explainable",
+        "guidance": (
+            "Pick a nuanced concept involving tradeoffs, failure modes, architecture, or evaluation. "
+            "The topic can be advanced, but the explanation must stay simple."
+        ),
+    },
+}
 
-Write a beginner-friendly Bengali tutorial post for this topic.
+_TUTORIAL_DIFFICULTY_SCHEDULE = [
+    "intermediate",
+    "advanced",
+    "intermediate",
+    "advanced",
+    "foundation",
+    "intermediate",
+    "advanced",
+]
 
-Then choose the visual that BEST serves this specific topic's pedagogy — not a generic chart.
-Think: what would a great textbook or YouTube thumbnail use to explain THIS concept visually?
+_TUTORIAL_FAMILIES = [
+    {
+        "id": "sql_analytics",
+        "name": "SQL and Analytics Engineering",
+        "focus": "SQL logic, query grain, window functions, joins, deduplication, cohort logic, aggregation mistakes, semantic layers",
+        "examples": {
+            "foundation": "COUNT(*) vs COUNT(column), NULL behavior, GROUP BY grain",
+            "intermediate": "join duplication, window functions, cohort analysis, query debugging",
+            "advanced": "sessionization, attribution windows, semantic modeling, advanced analytical SQL",
+        },
+    },
+    {
+        "id": "data_warehousing",
+        "name": "Data Warehousing and Modeling",
+        "focus": "star schema, fact vs dimension tables, warehouse design, cardinality, slowly changing dimensions, dimensional modeling",
+        "examples": {
+            "foundation": "fact table vs dimension table",
+            "intermediate": "choosing the right grain, snapshot tables, warehouse design decisions",
+            "advanced": "SCD Type 2 tradeoffs, bridge tables, semantic layer design",
+        },
+    },
+    {
+        "id": "data_science_ml",
+        "name": "Data Science and Machine Learning",
+        "focus": "model evaluation, validation strategy, leakage, feature design, class imbalance, model behavior, training pitfalls",
+        "examples": {
+            "foundation": "accuracy vs precision vs recall",
+            "intermediate": "ROC vs PR, leakage, overfitting, validation mistakes",
+            "advanced": "calibration, threshold tuning, offline vs online mismatch, feature-store consistency",
+        },
+    },
+    {
+        "id": "feature_engineering",
+        "name": "Feature Engineering and Data Preparation",
+        "focus": "feature design, leakage, encoding, temporal windows, aggregation logic, feature drift, training-serving mismatch",
+        "examples": {
+            "foundation": "categorical encoding choices, missing value handling",
+            "intermediate": "target leakage, rolling features, aggregation windows",
+            "advanced": "feature stores, online-offline consistency, drift and skew debugging",
+        },
+    },
+    {
+        "id": "ai_llm_systems",
+        "name": "AI and LLM Systems",
+        "focus": "prompting, grounding, retrieval, chunking, reranking, hallucination control, evaluation, routing, agent behavior",
+        "examples": {
+            "foundation": "prompt vs context vs retrieval",
+            "intermediate": "RAG chunking, retrieval quality, prompt routing",
+            "advanced": "grounding failures, evaluation design, system tradeoffs in LLM apps",
+        },
+    },
+    {
+        "id": "data_engineering",
+        "name": "Data Engineering",
+        "focus": "A/B tests, guardrail metrics, Simpson’s paradox, segmentation, causal traps, attribution confusion",
+        "examples": {
+            "foundation": "sample size intuition and vanity metrics",
+            "intermediate": "why average uplift can hide segment losses",
+            "advanced": "Simpson's paradox, interference effects, metric hierarchies",
+        },
+    },
+    {
+        "id": "data_pipelines",
+        "name": "Data Pipelines",
+        "focus": "ETL reliability, idempotency, late-arriving data, retries, data contracts, orchestration logic",
+        "examples": {
+            "foundation": "batch vs streaming basics with a real pipeline",
+            "intermediate": "idempotent ETL and duplicate protection",
+            "advanced": "late-arriving events, backfills, retry semantics, contract-driven pipelines",
+        },
+    },
+    {
+        "id": "llm_systems",
+        "name": "LLM Systems",
+        "focus": "RAG, chunking, retrieval quality, hallucination control, prompt routing, evaluation",
+        "examples": {
+            "foundation": "prompt vs context vs retrieval",
+            "intermediate": "RAG chunking and reranking tradeoffs",
+            "advanced": "retrieval evaluation, routing, grounding, and failure analysis",
+        },
+    },
+    {
+        "id": "statistics",
+        "name": "Statistics for Decision Making",
+        "focus": "sampling bias, variance, distributions, Bayesian thinking, regression pitfalls, uncertainty",
+        "examples": {
+            "foundation": "correlation vs causation with a sharper example",
+            "intermediate": "sampling bias and misleading dashboards",
+            "advanced": "Simpson's paradox, regression to the mean, calibration of uncertainty",
+        },
+    },
+    {
+        "id": "data_analytics_bi",
+        "name": "Data Analytics and BI",
+        "focus": "dashboard logic, KPI design, segmentation, funnel analysis, attribution, stakeholder interpretation, misleading metrics",
+        "examples": {
+            "foundation": "vanity metrics vs decision metrics",
+            "intermediate": "funnel interpretation, segment analysis, dashboard pitfalls",
+            "advanced": "metric hierarchies, attribution tradeoffs, analytical ambiguity",
+        },
+    },
+    {
+        "id": "databases_and_python",
+        "name": "Databases and Python for Data",
+        "focus": "database design, indexing intuition, transactional thinking, Python data workflows, dataframes, memory pitfalls",
+        "examples": {
+            "foundation": "primary key vs foreign key, pandas filtering basics",
+            "intermediate": "indexing tradeoffs, merge pitfalls, dataframe memory mistakes",
+            "advanced": "transaction boundaries, query optimization intuition, large-scale Python data workflow design",
+        },
+    },
+]
 
-Available visual types and when to use them:
 
-  "chart" with chart_type "bar"       — comparisons, rankings, category counts
-  "chart" with chart_type "line"      — trends over time, learning curves, epochs
-  "chart" with chart_type "pie"       — proportions, distributions, market share
-  "chart" with chart_type "scatter"   — correlation, clustering, regression visualization
-  "chart" with chart_type "histogram" — frequency distribution, data spread
-  "flowchart"                         — algorithms, decision logic, pipelines, step-by-step processes
+def _tutorial_history_block(tutorial_history: list[dict], limit: int = 12) -> str:
+    if not tutorial_history:
+        return "(none yet)"
+
+    lines: list[str] = []
+    for entry in tutorial_history[-limit:]:
+        topic = entry.get("topic_en", "")
+        if not topic:
+            continue
+        family = entry.get("topic_family", "unknown") or "unknown"
+        difficulty = entry.get("difficulty", "unknown") or "unknown"
+        lines.append(f"- {topic} | family={family} | difficulty={difficulty}")
+
+    return "\n".join(lines) if lines else "(none yet)"
+
+
+def _tutorial_difficulty_for_today() -> dict:
+    difficulty_key = _TUTORIAL_DIFFICULTY_SCHEDULE[datetime.now().weekday()]
+    return {"key": difficulty_key, **_TUTORIAL_DIFFICULTIES[difficulty_key]}
+
+
+def _tutorial_family_for_today(tutorial_history: list[dict]) -> dict:
+    recent_families = [
+        entry.get("topic_family")
+        for entry in tutorial_history[-3:]
+        if entry.get("topic_family")
+    ]
+    candidates = [
+        family for family in _TUTORIAL_FAMILIES
+        if family["id"] not in recent_families[:2]
+    ] or _TUTORIAL_FAMILIES
+    day_index = datetime.now().toordinal()
+    return candidates[day_index % len(candidates)]
+
+
+def _tutorial_recent_family_block(tutorial_history: list[dict]) -> str:
+    families = []
+    for entry in reversed(tutorial_history):
+        family = entry.get("topic_family")
+        if family and family not in families:
+            families.append(family)
+        if len(families) == 5:
+            break
+    return ", ".join(families) if families else "(none yet)"
+
+
+def _tutorial_family_examples_block(family: dict) -> str:
+    examples = family.get("examples", {})
+    return (
+        f"- Foundation angle: {examples.get('foundation', '')}\n"
+        f"- Intermediate angle: {examples.get('intermediate', '')}\n"
+        f"- Advanced angle: {examples.get('advanced', '')}"
+    )
+
+
+_TUTORIAL_PLAN_PROMPT = """\
+Tutorial history (recent):
+{history_block}
+
+Recent families used:
+{recent_families}
+
+Today's assigned difficulty:
+- Difficulty key: {difficulty_key}
+- Difficulty label: {difficulty_label}
+- Guidance: {difficulty_guidance}
+
+Today's assigned family:
+- Family id: {family_id}
+- Family name: {family_name}
+- Focus: {family_focus}
+- Example angles:
+{family_examples}
+
+Choose ONE fresh tutorial topic for today's 8 PM Bangla Facebook lesson.
+
+Rules:
+- The topic must be specific and save-worthy
+- The topic must fit the assigned family
+- The topic must respect the assigned difficulty
+- The assigned family is a broad domain, not a fixed menu of topics
+- The example angles are inspiration only; you may choose any fresh topic inside the wider domain
+- Avoid generic titles like "SQL Joins Explained" or "Decision Tree Algorithm"
+- Prefer concepts that are misunderstood in practice, involve tradeoffs, or reveal a useful mental model
+- The explanation later will be in simple Bengali, so pick a topic that can be made clear without dumbing it down
+- Avoid exact repeats and near repeats from history
+
+Return ONLY this JSON:
+{{
+  "topic_en": "specific English topic title",
+  "topic_family": "{family_id}",
+  "difficulty": "{difficulty_key}",
+  "hook_angle": "short angle for the opening hook",
+  "why_it_matters": "why this topic matters to data/AI learners",
+  "learning_goal": "what the reader should understand by the end",
+  "research_query": "English web research query for examples, pitfalls, and tradeoffs",
+  "prereq_terms": ["term 1", "term 2", "term 3"],
+  "visual_type_hint": "chart|flowchart|table|matrix|comparison|architecture",
+  "visual_angle": "what the visual should teach"
+}}
+
+Rules for fields:
+- prereq_terms must contain 2-4 short English terms
+- visual_type_hint must be one of the listed values
+- research_query must be detailed enough for Tavily research
+"""
+
+
+def plan_tutorial_bengali(tutorial_history: list[dict]) -> dict:
+    logger.info("Planning Bengali tutorial topic...")
+    difficulty = _tutorial_difficulty_for_today()
+    family = _tutorial_family_for_today(tutorial_history)
+    raw = _call(
+        _TUTORIAL_PLAN_SYSTEM,
+        _TUTORIAL_PLAN_PROMPT.format(
+            history_block=_tutorial_history_block(tutorial_history),
+            recent_families=_tutorial_recent_family_block(tutorial_history),
+            difficulty_key=difficulty["key"],
+            difficulty_label=difficulty["label"],
+            difficulty_guidance=difficulty["guidance"],
+            family_id=family["id"],
+            family_name=family["name"],
+            family_focus=family["focus"],
+            family_examples=_tutorial_family_examples_block(family),
+        ),
+        max_tokens=1800,
+    )
+    result = _parse_json(raw)
+    result.setdefault("example_entity", "generic")
+    result.setdefault("industry", "")
+    result["difficulty"] = difficulty["key"]
+    result["topic_family"] = family["id"]
+    result.setdefault("research_query", result.get("topic_en", "data tutorial topic"))
+    logger.info(
+        "Tutorial plan selected — "
+        f"topic={result.get('topic_en')} | family={result.get('topic_family')} | "
+        f"difficulty={result.get('difficulty')}"
+    )
+    return result
+
+
+def _tutorial_generation_prompt(tutorial_history: list[dict], tutorial_plan: dict, research: str) -> str:
+    plan_json = json.dumps(tutorial_plan, ensure_ascii=False, indent=2)
+    history_block = _tutorial_history_block(tutorial_history)
+    return f"""\
+Tutorial history (recent):
+{history_block}
+
+Tutorial plan:
+{plan_json}
+
+Research:
+{research}
+
+Write today's Bengali Facebook tutorial.
+
+Required learning flow:
+1. Hook — 1 short paragraph about a real confusion, pain point, or scenario
+2. Why it matters — 1 short paragraph tied to real work, dashboards, models, SQL, pipelines, or AI systems
+3. Before we dive in — explain the key terms from the plan in simple Bengali
+4. Worked example — one concrete example with realistic numbers, rows, pipeline stages, or model behavior
+5. Common mistake — one practical mistake and how to avoid it
+6. Mini challenge — ask the reader to predict or solve something before giving the answer
+7. Takeaway — 2-3 short lines that give the mental model
+8. Closing question — one natural question relevant to the lesson
+
+Rules:
+- Write in natural Bengali with occasional familiar English technical words where they sound real
+- Keep the topic advanced enough to feel fresh, but keep the explanation accessible
+- Use short sections and line breaks so the post is easy to read on Facebook
+- Keep the full post around 450-700 words
+- Use the research to ground the example, tradeoffs, and common mistake
+- Do not paste URLs or source links into the tutorial post
+- Avoid textbook stiffness and avoid engagement bait
+- The post and the visual must align tightly
+- All visual labels/data must be in English
+
+Available visual types and best use:
+- "chart" with chart_type "bar"       — comparisons, rankings, category counts
+- "chart" with chart_type "line"      — trends over time, learning curves, thresholds
+- "chart" with chart_type "pie"       — proportions only when proportions truly matter
+- "chart" with chart_type "scatter"   — relationships, separation, calibration, tradeoffs
+- "chart" with chart_type "histogram" — distributions, spread, skew
+- "flowchart"                         — process logic, data flow, decision paths
+- "table"                             — SQL result tables, before/after rows, feature comparisons
+- "matrix"                            — confusion matrices, decision grids, metric comparisons across cells
+- "comparison"                        — before/after, A vs B, wrong way vs right way
+- "architecture"                      — pipeline stages, system components, RAG or ETL flow blocks
 
 Rules for visual_config:
-- All text (labels, titles, axis names) must be in English
-- Use REAL, meaningful data/values that actually illustrate the concept
-  (not placeholder 10/20/30 — use numbers that tell a story)
-- For scatter: provide "x_values" and "y_values" as lists
-- For histogram: provide "data" as a flat list of raw values
-- For flowchart: write clean, valid Mermaid.js syntax
+- Use a visual that genuinely teaches the concept
+- Use meaningful values, labels, rows, or stages
+- Avoid placeholder values
+- Keep titles short and clear
+- For scatter: provide "x_values" and "y_values"
+- For histogram: provide "data"
+- For flowchart: provide valid Mermaid.js syntax
+- For table: provide "columns" and "rows"
+- For matrix: provide "x_labels", "y_labels", and "values"
+- For comparison: provide left/right titles and short bullet points
+- For architecture: provide 3-6 stages with short labels/details
 
 Return ONLY valid JSON in one of these shapes:
 
 Chart:
-{{"topic_en": "...", "post_text": "...Bengali...", "visual_type": "chart", "visual_config": {{"title": "...", "chart_type": "bar|line|pie|scatter|histogram", "labels": [...], "values": [...], "xlabel": "...", "ylabel": "..."}}}}
+{{"topic_en": "...", "topic_family": "{tutorial_plan.get('topic_family', '')}", "difficulty": "{tutorial_plan.get('difficulty', '')}", "post_text": "...Bengali...", "visual_type": "chart", "visual_config": {{"title": "...", "chart_type": "bar|line|pie|scatter|histogram", "labels": [...], "values": [...], "xlabel": "...", "ylabel": "..."}}}}
 
 Scatter:
-{{"topic_en": "...", "post_text": "...Bengali...", "visual_type": "chart", "visual_config": {{"title": "...", "chart_type": "scatter", "x_values": [...], "y_values": [...], "xlabel": "...", "ylabel": "..."}}}}
+{{"topic_en": "...", "topic_family": "{tutorial_plan.get('topic_family', '')}", "difficulty": "{tutorial_plan.get('difficulty', '')}", "post_text": "...Bengali...", "visual_type": "chart", "visual_config": {{"title": "...", "chart_type": "scatter", "x_values": [...], "y_values": [...], "xlabel": "...", "ylabel": "..."}}}}
 
 Histogram:
-{{"topic_en": "...", "post_text": "...Bengali...", "visual_type": "chart", "visual_config": {{"title": "...", "chart_type": "histogram", "data": [...], "xlabel": "...", "ylabel": "Frequency"}}}}
+{{"topic_en": "...", "topic_family": "{tutorial_plan.get('topic_family', '')}", "difficulty": "{tutorial_plan.get('difficulty', '')}", "post_text": "...Bengali...", "visual_type": "chart", "visual_config": {{"title": "...", "chart_type": "histogram", "data": [...], "xlabel": "...", "ylabel": "Frequency"}}}}
 
 Flowchart:
-{{"topic_en": "...", "post_text": "...Bengali...", "visual_type": "flowchart", "visual_config": {{"title": "...", "mermaid_code": "graph TD\\n  ..."}}}}
+{{"topic_en": "...", "topic_family": "{tutorial_plan.get('topic_family', '')}", "difficulty": "{tutorial_plan.get('difficulty', '')}", "post_text": "...Bengali...", "visual_type": "flowchart", "visual_config": {{"title": "...", "mermaid_code": "graph TD\\n  ..."}}}}
+
+Table:
+{{"topic_en": "...", "topic_family": "{tutorial_plan.get('topic_family', '')}", "difficulty": "{tutorial_plan.get('difficulty', '')}", "post_text": "...Bengali...", "visual_type": "table", "visual_config": {{"title": "...", "columns": ["...", "..."], "rows": [["...", "..."], ["...", "..."]], "footer": "..."}}}}
+
+Matrix:
+{{"topic_en": "...", "topic_family": "{tutorial_plan.get('topic_family', '')}", "difficulty": "{tutorial_plan.get('difficulty', '')}", "post_text": "...Bengali...", "visual_type": "matrix", "visual_config": {{"title": "...", "x_labels": ["...", "..."], "y_labels": ["...", "..."], "values": [[1, 2], [3, 4]], "cell_labels": [["...", "..."], ["...", "..."]], "footer": "..."}}}}
+
+Comparison:
+{{"topic_en": "...", "topic_family": "{tutorial_plan.get('topic_family', '')}", "difficulty": "{tutorial_plan.get('difficulty', '')}", "post_text": "...Bengali...", "visual_type": "comparison", "visual_config": {{"title": "...", "left_title": "...", "right_title": "...", "left_points": ["...", "..."], "right_points": ["...", "..."], "footer": "..."}}}}
+
+Architecture:
+{{"topic_en": "...", "topic_family": "{tutorial_plan.get('topic_family', '')}", "difficulty": "{tutorial_plan.get('difficulty', '')}", "post_text": "...Bengali...", "visual_type": "architecture", "visual_config": {{"title": "...", "stages": [{{"label": "...", "detail": "..."}}, {{"label": "...", "detail": "..."}}], "footer": "..."}}}}
 """
 
 
-def generate_tutorial_bengali(posted_topics: list[str]) -> dict:
+def generate_tutorial_bengali(tutorial_history: list[dict], tutorial_plan: dict, research: str) -> dict:
     logger.info("Generating Bengali tutorial post...")
-    posted_str = "\n".join(f"- {t}" for t in posted_topics) if posted_topics else "(none yet)"
-    raw = _call(_TUTORIAL_SYSTEM, _TUTORIAL_PROMPT.format(posted=posted_str), max_tokens=2500)
+    raw = _call(
+        _TUTORIAL_SYSTEM,
+        _tutorial_generation_prompt(tutorial_history, tutorial_plan, research),
+        max_tokens=3200,
+    )
     result = _parse_json(raw)
-    logger.info(f"Tutorial generated — topic: {result.get('topic_en')}")
+    result["topic_family"] = tutorial_plan.get("topic_family", result.get("topic_family", ""))
+    result["difficulty"] = tutorial_plan.get("difficulty", result.get("difficulty", ""))
+    logger.info(
+        "Tutorial generated — "
+        f"topic={result.get('topic_en')} | family={result.get('topic_family')} | "
+        f"difficulty={result.get('difficulty')}"
+    )
     return result
 
 
@@ -333,6 +691,7 @@ You create high-engagement Facebook content for a Bangla-first data/AI page.
 The page voice is sharp, practical, opinionated, and easy to understand.
 Avoid generic motivation and avoid sounding like a content farm.
 Write in natural Bengali with occasional familiar English tech words when that feels more real.
+Avoid relying on the same famous company examples repeatedly.
 Return valid JSON only.
 """
 
@@ -346,6 +705,9 @@ Assigned category for this run:
 - Category: {category_name}
 - Category guidance: {category_guidance}
 
+Recent viral history:
+{history_block}
+
 Optional research/context:
 {research}
 
@@ -356,6 +718,11 @@ Requirements:
 - The body should be concise but valuable
 - Add 1 natural question or CTA at the end when it helps comments
 - Keep it highly shareable/saveable
+- Avoid repeating the same example company, product, or case-study setup from recent posts
+- If you use a real company example, prefer a company or product not used recently
+- Do NOT default to Netflix just because it is a familiar example
+- Rotate across industries when useful: ecommerce, fintech, SaaS, logistics, gaming, telecom, healthcare, media, local/regional companies, productivity tools, marketplaces
+- For `Mini Case Study`, you may also use a realistic generic product/business scenario instead of a famous brand
 
 Visual requirements:
 - Choose whether this post needs an illustration/image by setting visual_type to "viral"
@@ -367,6 +734,8 @@ Return ONLY this JSON:
 {{
   "category": "{category_name}",
   "topic_en": "short internal topic label",
+  "example_entity": "company, product, or scenario name used in the post; use 'generic' if not brand-based",
+  "industry": "short industry label such as streaming, fintech, ecommerce, SaaS, gaming, telecom",
   "post_text": "full Bengali Facebook post",
   "visual_type": "viral",
   "visual_config": {{
@@ -443,7 +812,28 @@ def _viral_category_for_today(slot_name: str) -> dict:
     return categories[(day_index * step + offset) % len(categories)]
 
 
-def generate_viral_content(slot_name: str, research: str = "") -> dict:
+def _viral_history_block(viral_history: list[dict] | None, limit: int = 8) -> str:
+    if not viral_history:
+        return "(none yet)"
+
+    lines: list[str] = []
+    for entry in viral_history[-limit:]:
+        topic = entry.get("topic_en", "")
+        if not topic:
+            continue
+        slot_name = entry.get("slot_name", "unknown") or "unknown"
+        category = entry.get("category", "unknown") or "unknown"
+        example_entity = entry.get("example_entity", "unknown") or "unknown"
+        industry = entry.get("industry", "unknown") or "unknown"
+        lines.append(
+            f"- slot={slot_name} | category={category} | entity={example_entity} | "
+            f"industry={industry} | topic={topic}"
+        )
+
+    return "\n".join(lines) if lines else "(none yet)"
+
+
+def generate_viral_content(slot_name: str, research: str = "", viral_history: list[dict] | None = None) -> dict:
     logger.info(f"Generating viral content for {slot_name} slot...")
     slot_guidance, _ = _viral_slot_config(slot_name)
     category = _viral_category_for_today(slot_name)
@@ -455,6 +845,7 @@ def generate_viral_content(slot_name: str, research: str = "") -> dict:
             slot_guidance=slot_guidance,
             category_name=category["name"],
             category_guidance=category["guidance"],
+            history_block=_viral_history_block(viral_history),
             research=research_block,
         ),
         max_tokens=2200,

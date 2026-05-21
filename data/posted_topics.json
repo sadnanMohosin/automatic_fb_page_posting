@@ -1,5 +1,9 @@
 [
   "ETL Pipeline Basics",
   "Decision Tree Algorithm",
-  "Confusion Matrix and Model Evaluation"
+  "Confusion Matrix and Model Evaluation",
+  "SQL Joins Explained",
+  "Why Your RAG System Retrieves the Right Chunks But Still Gives Wrong Answers",
+  "Target Leakage Through Aggregation: When Your Feature Already Knows the Answer",
+  "Why VACUUM and ANALYZE Matter More Than Your Query Rewrite in PostgreSQL"
 ]

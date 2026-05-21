@@ -1,0 +1,42 @@
+[
+  {
+    "slot_name": "day",
+    "category": "Hot Topic Explainer",
+    "topic_en": "how netflix uses implicit negative feedback to change recommendations",
+    "example_entity": "Netflix",
+    "industry": "streaming",
+    "posted_at": "2026-04-21T13:17:00"
+  },
+  {
+    "slot_name": "night",
+    "category": "Mini Case Study",
+    "topic_en": "why netflix cancels shows despite good ratings",
+    "example_entity": "Netflix",
+    "industry": "streaming",
+    "posted_at": "2026-04-21T23:00:00"
+  },
+  {
+    "slot_name": "night",
+    "category": "Checklist / Roadmap",
+    "topic_en": "why netflix values completion rate more than view count",
+    "example_entity": "Netflix",
+    "industry": "streaming",
+    "posted_at": "2026-04-22T23:41:31"
+  },
+  {
+    "slot_name": "night",
+    "category": "Mini Case Study",
+    "topic_en": "how a food delivery app used cohort analysis to stop losing customers silently",
+    "example_entity": "generic food delivery startup",
+    "industry": "food delivery / marketplace",
+    "posted_at": "2026-04-25T23:57:33"
+  },
+  {
+    "slot_name": "day",
+    "category": "News Take",
+    "topic_en": "CDO roles rising as AI investment hits record high in 2026",
+    "example_entity": "generic",
+    "industry": "SaaS / enterprise tech",
+    "posted_at": "2026-04-26T12:55:39"
+  }
+]
